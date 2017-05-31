@@ -73,6 +73,7 @@ m4_if(m4_cmp(weston_micro_version, [90]), [-1],
 
 # Check for programs
 AC_PROG_CC
+AC_PROG_CXX
 AC_PROG_SED
 
 # Initialize libtool
@@ -253,6 +254,25 @@ AM_CONDITIONAL([ENABLE_FBDEV_COMPOSITOR],
 AS_IF([test x$enable_fbdev_compositor = xyes], [
   AC_DEFINE([BUILD_FBDEV_COMPOSITOR], [1], [Build the fbdev compositor])
   PKG_CHECK_MODULES([FBDEV_COMPOSITOR], [libudev >= 136 mtdev >= 1.1.0])
+])
+
+AC_ARG_ENABLE([image-compositor], [  --enable-image-compositor],,
+              enable_image_compositor=yes)
+AM_CONDITIONAL([ENABLE_IMAGE_COMPOSITOR],
+               [test x$enable_image_compositor = xyes])
+if test x$enable_image_compositor = xyes; then
+  PKG_CHECK_MODULES(IMAGE_COMPOSITOR, [gbm])
+fi
+AS_IF([test x$enable_image_compositor = xyes], [
+  AC_DEFINE([BUILD_IMAGE_COMPOSITOR], [1], [Build the image compositor])
+  # Check protobuf
+  PKG_CHECK_MODULES(PROTOBUF, [protobuf >= 2.4.0])
+  AC_SUBST(PROTOBUF_LIBS)
+  AC_SUBST(PROTOBUF_CFLAGS)
+  AC_SUBST(PROTOBUF_VERSION)
+  AC_CHECK_PROG([PROTOC], [protoc], [protoc])
+  AS_IF([test "x${PROTOC}" == "x"],
+        [AC_MSG_ERROR([ProtoBuf compiler "protoc" not found.])])
 ])
 
 AC_ARG_ENABLE([rdp-compositor], [  --enable-rdp-compositor],,
@@ -614,7 +634,7 @@ fi
 
 
 if test "x$WESTON_NATIVE_BACKEND" = "x"; then
-	WESTON_NATIVE_BACKEND="drm-backend.so"
+	WESTON_NATIVE_BACKEND="image-backend.so"
 fi
 AC_MSG_NOTICE([Weston's native backend: $WESTON_NATIVE_BACKEND])
 AC_DEFINE_UNQUOTED([WESTON_NATIVE_BACKEND], ["$WESTON_NATIVE_BACKEND"],
@@ -630,7 +650,7 @@ AC_DEFINE_UNQUOTED([WESTON_SHELL_CLIENT], ["$WESTON_SHELL_CLIENT"],
 AC_ARG_ENABLE(demo-clients-install,
               AS_HELP_STRING([--enable-demo-clients-install],
                              [Install demo clients built with weston]),,
-			     enable_demo_clients_install=no)
+			     enable_demo_clients_install=yes)
 AM_CONDITIONAL(INSTALL_DEMO_CLIENTS, [test "x$enable_demo_clients_install" = "xyes"])
 
 AC_ARG_ENABLE(lcms,
@@ -706,6 +726,7 @@ AC_MSG_RESULT([
 	systemd-login support		${have_systemd_login}
 	systemd notify support		${enable_systemd_notify}
 
+	IMAGE Compositor		${enable_image_compositor}
 	DRM Compositor			${enable_drm_compositor}
 	X11 Compositor			${enable_x11_compositor}
 	Wayland Compositor		${enable_wayland_compositor}

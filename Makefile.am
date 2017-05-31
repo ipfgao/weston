@@ -89,6 +89,7 @@ libweston_@LIBWESTON_MAJOR@_la_SOURCES =			\
 	libweston/compositor-rdp.h			\
 	libweston/compositor-wayland.h			\
 	libweston/compositor-x11.h			\
+	libweston/compositor-image.h			\
 	libweston/input.c				\
 	libweston/data-device.c				\
 	libweston/screenshooter.c			\
@@ -299,6 +300,7 @@ libwestoninclude_HEADERS =			\
 	libweston/compositor-rdp.h		\
 	libweston/compositor-wayland.h		\
 	libweston/compositor-x11.h		\
+	libweston/compositor-image.h		\
 	libweston/windowed-output-api.h		\
 	libweston/plugin-registry.h		\
 	libweston/timeline-object.h		\
@@ -461,6 +463,30 @@ fbdev_backend_la_SOURCES =			\
 	libweston/compositor-fbdev.h		\
 	shared/helpers.h			\
 	$(INPUT_BACKEND_SOURCES)
+endif
+
+if ENABLE_IMAGE_COMPOSITOR
+
+SOCKET_INPUT_SOURCES =				\
+	libweston/socket-input.c				\
+	libweston/socket-local-server.c       \
+	libweston/proto-helpers.cc			\
+	libweston/weston_proto.pb.cc			\
+	libweston/weston_proto.pb.h
+
+dist_noinst_DATA = libweston/weston_proto.proto
+CLEANFILES += libweston/weston_proto.pb.cc libweston/weston_proto.pb.h
+BUILT_SOURCES += libweston/weston_proto.pb.h
+
+libweston_module_LTLIBRARIES += image-backend.la
+image_backend_la_LDFLAGS = -module -avoid-version
+image_backend_la_LIBADD = $(COMPOSITOR_LIBS) $(PROTOBUF_LIBS) \
+			  $(IMAGE_COMPOSITOR_LIBS)	\
+			  libsession-helper.la libshared.la
+image_backend_la_CFLAGS = $(COMPOSITOR_CFLAGS) $(PIXMAN_CFLAGS) $(AM_CFLAGS) $(IMAGE_COMPOSITOR_CFLAGS)
+image_backend_la_CPPFLAGS = $(COMPOSITOR_CFLAGS) $(PIXMAN_CFLAGS) $(PROTOBUF_CFLAGS) \
+							$(AM_CPPFLAGS)
+image_backend_la_SOURCES = libweston/compositor-image.c shared/helpers.h $(SOCKET_INPUT_SOURCES)
 endif
 
 if ENABLE_RDP_COMPOSITOR
@@ -1622,3 +1648,6 @@ protocol/%-server-protocol.h : $(top_srcdir)/protocol/%.xml
 
 protocol/%-client-protocol.h : $(top_srcdir)/protocol/%.xml
 	$(AM_V_GEN)$(MKDIR_P) $(dir $@) && $(wayland_scanner) client-header < $< > $@
+
+%.pb.cc %.pb.h: %.proto
+	$(PROTOC) --proto_path=$(srcdir) --cpp_out=$(builddir) $^

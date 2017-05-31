@@ -847,6 +847,7 @@ struct weston_compositor {
 	struct wl_signal destroy_signal;
 
 	struct wl_display *wl_display;
+	struct weston_config *config;
 	struct weston_desktop_xwayland *xwayland;
 	const struct weston_desktop_xwayland_interface *xwayland_interface;
 
@@ -1672,6 +1673,7 @@ enum weston_compositor_backend {
 	WESTON_BACKEND_RDP,
 	WESTON_BACKEND_WAYLAND,
 	WESTON_BACKEND_X11,
+	WESTON_BACKEND_IMAGE,
 };
 
 int

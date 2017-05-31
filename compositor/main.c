@@ -63,6 +63,7 @@
 #include "compositor-fbdev.h"
 #include "compositor-x11.h"
 #include "compositor-wayland.h"
+#include "compositor-image.h"
 #include "windowed-output-api.h"
 
 #define WINDOW_TITLE "Weston Compositor"
@@ -550,6 +551,9 @@ usage(int error_code)
 #if defined(BUILD_X11_COMPOSITOR)
 			"\t\t\t\tx11-backend.so\n"
 #endif
+#if defined(BUILD_IMAGE_COMPOSITOR)
+			"\t\t\t\timage-backend.so\n"
+#endif
 		"  --shell=MODULE\tShell module, defaults to desktop-shell.so\n"
 		"  -S, --socket=NAME\tName of socket to listen on\n"
 		"  -i, --idle-time=SECS\tIdle time in seconds\n"
@@ -627,6 +631,13 @@ usage(int error_code)
 		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
 		"  --output-count=COUNT\tCreate multiple outputs\n"
 		"  --no-input\t\tDont create input devices\n\n");
+#endif
+
+#if defined(BUILD_IMAGE_COMPOSITOR)
+	fprintf(stderr,
+		"Options for image-backend.so:\n\n"
+		"  --width=WIDTH\t\tWidth of image\n"
+		"  --height=HEIGHT\tHeight of image\n");
 #endif
 
 	exit(error_code);
@@ -1399,7 +1410,7 @@ load_rdp_backend(struct weston_compositor *c,
 		{ WESTON_OPTION_BOOLEAN, "no-clients-resize", 0, &config.no_clients_resize },
 		{ WESTON_OPTION_STRING,  "rdp4-key", 0, &config.rdp_key },
 		{ WESTON_OPTION_STRING,  "rdp-tls-cert", 0, &config.server_cert },
-		{ WESTON_OPTION_STRING,  "rdp-tls-key", 0, &config.server_key }
+		{ WESTON_OPTION_STRING,  "rdp-tls-key", 0, &config.server_key },
 	};
 
 	parse_options(rdp_options, ARRAY_LENGTH(rdp_options), argc, argv);
@@ -1470,6 +1481,86 @@ out:
 	free(config.device);
 	return ret;
 }
+
+
+static void
+image_backend_output_configure(struct wl_listener *listener, void *data)
+{
+	struct weston_output *output = data;
+	struct wet_compositor *compositor = to_wet_compositor(output->compositor);
+	struct wet_output_config *parsed_options = compositor->parsed_options;
+	const struct weston_image_output_api *api = weston_image_output_get_api(output->compositor);
+	int width = 800;
+	int height = 600;
+
+	struct weston_config *wc = wet_get_config(output->compositor);
+	struct weston_config_section *section;
+
+	section = weston_config_get_section(wc, "output", "name", "image");
+
+	assert(parsed_options);
+
+	if (!api) {
+		weston_log("Cannot use weston_image_output_api.\n");
+		return;
+	}
+
+	if (parsed_options->width)
+		width = parsed_options->width;
+
+	if (parsed_options->height)
+		height = parsed_options->height;
+
+	weston_output_set_scale(output, 1);
+	wet_output_set_transform(output, section, WL_OUTPUT_TRANSFORM_NORMAL, UINT32_MAX);
+
+	if (api->output_set_size(output, width, height) < 0) {
+		weston_log("Cannot configure output \"%s\" using weston_image_output_api.\n",
+			   output->name);
+		return;
+	}
+	
+	weston_output_enable(output);
+}
+
+static int
+load_image_backend(struct weston_compositor *c,
+		      int *argc, char **argv, struct weston_config *wc)
+{
+	struct weston_image_backend_config config = {{ 0, }};
+	int ret = 0;
+
+	struct wet_output_config *parsed_options = wet_init_parsed_options(c);
+	if (!parsed_options)
+		return -1;
+
+	const struct weston_option image_options[] = {
+		{ WESTON_OPTION_INTEGER, "width", 0, &parsed_options->width },
+		{ WESTON_OPTION_INTEGER, "height", 0, &parsed_options->height },
+	};
+
+	parse_options(image_options, ARRAY_LENGTH(image_options), argc, argv);
+
+	if (!config.device)
+		config.device = strdup("/tmp/image.bin");
+
+	config.base.struct_version = WESTON_IMAGE_BACKEND_CONFIG_VERSION;
+	config.base.struct_size = sizeof(struct weston_image_backend_config);
+	config.configure_device = configure_input_device;
+
+	/* load the actual wayland backend and configure it */
+	ret = weston_compositor_load_backend(c, WESTON_BACKEND_IMAGE,
+					     &config.base);
+	if (ret < 0)
+		goto out;
+
+	wet_set_pending_output_handler(c, image_backend_output_configure);
+
+out:
+	free(config.device);
+	return ret;
+}
+
 
 static void
 x11_backend_output_configure(struct wl_listener *listener, void *data)
@@ -1730,7 +1821,8 @@ load_backend(struct weston_compositor *compositor, const char *backend,
 		return load_x11_backend(compositor, argc, argv, config);
 	else if (strstr(backend, "wayland-backend.so"))
 		return load_wayland_backend(compositor, argc, argv, config);
-
+	else if (strstr(backend, "image-backend.so"))
+		return load_image_backend(compositor, argc, argv, config);
 	weston_log("Error: unknown backend \"%s\"\n", backend);
 	return -1;
 }
